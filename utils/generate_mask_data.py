@@ -3,14 +3,14 @@ import cv2
 import numpy as np
 import pandas as pd
 
+from pathlib import Path
 from dataclasses import dataclass
 from typing import List, Tuple, Optional
-from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parents[1]
 sys.path.append(str(PROJECT_ROOT))
 
-from DataPostprocessing.utils import get_mask_from_RLE
+from DataPostprocessing.utils import decode_rle_to_mask
 
 @dataclass
 class LandmarkPoints:
@@ -89,11 +89,11 @@ class CheXmaskProcessor:
         # Get image dimensions
         height, width = self.current_example["Height"], self.current_example["Width"]
         
-        # Get masks
+        # Get masks (Convert RLE (Run Length Encoding) string to binary mask)
         self.current_masks = OrganMasks(
-            right_lung=get_mask_from_RLE(self.current_example["Right Lung"], height, width),
-            left_lung=get_mask_from_RLE(self.current_example["Left Lung"], height, width),
-            heart=get_mask_from_RLE(self.current_example["Heart"], height, width)
+            right_lung=decode_rle_to_mask(self.current_example["Right Lung"], height, width),
+            left_lung=decode_rle_to_mask(self.current_example["Left Lung"], height, width),
+            heart=decode_rle_to_mask(self.current_example["Heart"], height, width)
         )
     
 
@@ -139,51 +139,47 @@ class CheXmaskProcessor:
         Args:
             output_dir: Directory to save the output images
             save_options: List of options to save. Valid options are:
-                         ['left_lung', 'right_lung', 'heart', 'landmarks', 'combination']
+                        ['left_lung', 'right_lung', 'heart', 'landmarks', 'combination']
         """
         if self.current_example is None:
             raise ValueError("No example loaded. Call load_example() first.")
             
-        if save_options is None:
-            save_options = ['combination']
-            
+        save_options = save_options or ['combination']
         output_path = Path(output_dir)
-        output_path.mkdir(parents=True, exist_ok=True)
         
-        height, width = self.current_example["Height"], self.current_example["Width"]
+        # Define mapping of options to their corresponding mask/visualization functions
+        visualization_map = {
+            'left_lung': lambda: self.current_masks.left_lung,
+            'right_lung': lambda: self.current_masks.right_lung,
+            'heart': lambda: self.current_masks.heart,
+            'landmarks': lambda: self._draw_landmarks(
+                np.zeros((self.current_example["Height"], self.current_example["Width"], 3), dtype=np.uint8),
+                self.current_landmarks
+            ),
+            'combination': lambda: self._draw_landmarks(
+                self._create_colored_mask(),
+                self.current_landmarks
+            )
+        }
         
         for option in save_options:
-            if option == 'left_lung':
-                print(self.current_masks.left_lung.shape)
-                cv2.imwrite(str(output_path / 'left_lung_mask.png'),
-                          self.current_masks.left_lung)
-                
-            elif option == 'right_lung':
-                cv2.imwrite(str(output_path / 'right_lung_mask.png'),
-                          self.current_masks.right_lung)
-                
-            elif option == 'heart':
-                cv2.imwrite(str(output_path / 'heart_mask.png'),
-                          self.current_masks.heart)
-                
-            elif option == 'landmarks':
-                blank = np.zeros((height, width, 3), dtype=np.uint8)
-                result = self._draw_landmarks(blank, self.current_landmarks)
-                cv2.imwrite(str(output_path / 'landmarks.png'), result)
-                
-            elif option == 'combination':
-                colored_mask = self._create_colored_mask()
-                result = self._draw_landmarks(colored_mask, self.current_landmarks)
-                cv2.imwrite(str(output_path / 'combination.png'), result)
-                
-            else:
+            if option not in visualization_map:
                 print(f"Warning: Unknown save option '{option}'")
-
+                continue
+                
+            # Create subdirectory for each option
+            save_dir = output_path / option
+            save_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Generate and save the visualization
+            visualization = visualization_map[option]()
+            cv2.imwrite(str(save_dir / f"{self.current_example['image_id']}.png"), visualization)
+        
 
 def main():
     """Example usage of the CheXmask processor."""
-    #processor = CheXmaskProcessor("Annotations/OriginalResolution/VinDr-CXR.csv.gz")
-    processor = CheXmaskProcessor(r"E:\Kai_2\DATA_Set\X-ray\CheXmask\Annotations\OriginalResolution\VinDr-CXR.csv.gz")
+    #processor = CheXmaskProcessor("Annotations/OriginalResolution/VinDr-CXR.csv")
+    processor = CheXmaskProcessor(r"E:\Kai_2\DATA_Set\X-ray\CheXmask\Annotations\OriginalResolution\VinDr-CXR.csv")
     # Load the first example
     processor.load_example(0)
     
