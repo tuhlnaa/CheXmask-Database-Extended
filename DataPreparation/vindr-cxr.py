@@ -40,18 +40,21 @@ class PaddingMetadata:
 class DicomProcessor:
     """Process DICOM images with padding and resizing capabilities."""
     
-    def __init__(self, input_dir: Path, output_dir: Path, target_size: int = 1024):
+    def __init__(self, input_dir: Path, output_dir: Path, target_size: Optional[int] = 1024, 
+                 preserve_resolution: bool = False):
         """
         Initialize the DICOM processor.
         
         Args:
             input_dir: Directory containing DICOM files
             output_dir: Directory for output PNG files
-            target_size: Target size for the output square images
+            target_size: Target size for the output square images (ignored if preserve_resolution is True)
+            preserve_resolution: If True, maintain original resolution without padding or resizing
         """
         self.input_dir = Path(input_dir)
         self.output_dir = Path(output_dir)
         self.target_size = target_size
+        self.preserve_resolution = preserve_resolution
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
 
@@ -121,31 +124,42 @@ class DicomProcessor:
             data, pixel_spacing = self.read_xray(file_path)
             height, width = data.shape[:2]
             
-            # Pad and resize
-            padded_img, padding = self.pad_to_square(data)
-            scaled_img = cv2.resize(padded_img, (self.target_size, self.target_size))
+            if self.preserve_resolution:
+                # Keep original image without padding or resizing
+                output_img = data
+                padding = None
+            else:
+                # Pad and resize as before
+                output_img, padding = self.pad_to_square(data)
+                output_img = cv2.resize(output_img, (self.target_size, self.target_size))
             
             # Save processed image
             relative_path = file_path.relative_to(self.input_dir)
             output_path = self.output_dir / relative_path.with_suffix('.png')
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            cv2.imwrite(str(output_path), scaled_img)
+            cv2.imwrite(str(output_path), output_img)
             
-            # Calculate scaled pixel spacing if original spacing is available
+            # Calculate scaled pixel spacing only if resizing was done
             scaled_pixel_spacing = None
-            if pixel_spacing is not None:
+            if pixel_spacing is not None and not self.preserve_resolution:
                 scale_factor = self.target_size / max(height, width)
                 scaled_pixel_spacing = pixel_spacing / scale_factor
             
             # Return metadata
-            return {
+            metadata = {
                 'filename': str(relative_path),
                 'width': width,
                 'height': height,
                 'original_pixel_spacing_mm': pixel_spacing,
                 'scaled_pixel_spacing_mm': scaled_pixel_spacing,
-                **padding.__dict__
+                'resolution_preserved': self.preserve_resolution
             }
+            
+            # Add padding information only if padding was performed
+            if padding is not None:
+                metadata.update(padding.__dict__)
+                
+            return metadata
         except Exception as e:
             logger.error(f"Error processing {file_path}: {str(e)}")
             return None
@@ -196,16 +210,23 @@ def parse_args():
                        help="Directory containing DICOM files")
     parser.add_argument("--output-dir", type=Path, required=True, 
                        help="Directory for output PNG files")
-    parser.add_argument("--target-size", type=int, default=1024, 
-                       help="Target size for the output square images (default: 1024)")
+    parser.add_argument("--target-size", type=int,
+                       help="Target size for the output square images (required unless --preserve-resolution is used)")
+    parser.add_argument("--preserve-resolution", action="store_true",
+                       help="Preserve original resolution without padding or resizing")
     parser.add_argument("--num-processes", type=int, 
                        default=max(1, mp.cpu_count() - 1),
                        help="Number of processes to use for parallel processing (default: number of CPU cores - 1)")
     parser.add_argument("--log-level", 
                        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
                        default="INFO", help="Set the logging level (default: INFO)")
+    args = parser.parse_args()
 
-    return parser.parse_args()
+    # Validate arguments
+    if not args.preserve_resolution and args.target_size is None:
+        parser.error("--target-size is required when --preserve-resolution is not used")
+
+    return args
 
 
 def main():
@@ -216,13 +237,20 @@ def main():
     logger.setLevel(args.log_level)
     logger.info(f"Processing DICOM files from {args.input_dir}")
     logger.info(f"Output directory: {args.output_dir}")
-    logger.info(f"Target size: {args.target_size}x{args.target_size}")
+    if not args.preserve_resolution:
+        logger.info(f"Target size: {args.target_size}x{args.target_size}")
+    logger.info(f"Preserve resolution: {args.preserve_resolution}")
     
-    processor = DicomProcessor(args.input_dir, args.output_dir, args.target_size)
+    processor = DicomProcessor(
+        args.input_dir, 
+        args.output_dir, 
+        args.target_size if not args.preserve_resolution else None,
+        args.preserve_resolution
+    )
     metadata_df = processor.process_files(args.num_processes)
     
     # Save metadata
-    metadata_path = args.output_dir.parents[0] /  (args.output_dir.name + '_paddings.csv')
+    metadata_path = args.output_dir.parents[0] / (args.output_dir.name + '_paddings.csv')
     metadata_df.to_csv(metadata_path, index=False)
     logger.info(f"Successfully processed {len(metadata_df)} files")
     logger.info(f"Metadata saved to {metadata_path}")
