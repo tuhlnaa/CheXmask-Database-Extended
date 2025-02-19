@@ -61,10 +61,7 @@ def decode_rle_to_mask(rle: str, height: int, width: int) -> np.ndarray:
     return mask.reshape((height, width))
 
 
-def create_dense_mask_from_landmarks(
-    landmarks: np.ndarray,
-    image_size: Union[int, Tuple[int, int]] = 1024
-) -> np.ndarray:
+def create_dense_mask_from_landmarks(landmarks: np.ndarray, image_size: Union[int, Tuple[int, int]] = 1024) -> np.ndarray:
     """Create a binary mask from landmark points by filling their contour.
 
     Args:

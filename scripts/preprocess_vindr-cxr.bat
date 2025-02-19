@@ -27,6 +27,5 @@ echo === Processing completed at %date% %time% ===
 rem Display metadata file location
 echo Metadata saved to: %OUTPUT_DIR%\image_paddings.csv
 
-rem Pause to view results if double-clicked
 pause
 endlocal
