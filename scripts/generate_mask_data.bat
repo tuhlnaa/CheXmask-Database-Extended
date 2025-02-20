@@ -2,9 +2,12 @@
 setlocal
 
 rem Configuration
-set "CSV_PATH=.\data\chexmask_annotations.csv"
+set "CSV_PATH=.\data\processed_annotations_VinDr-CXR.csv"
 set "OUTPUT_DIR=.\VinDr-CXR\mask"
+set "IMAGE_DIR=.\VinDr-CXR\train_png"
+
 set SAVE_OPTIONS="left_lung" "right_lung" "heart" "combination"
+set "NUM_WORKERS=16"
 
 rem Print header
 echo === CheXmask Dataset Processing Pipeline ===
@@ -14,9 +17,12 @@ rem Execute the processing script
 echo [EXECUTING] Starting CheXmask processing...
 python utils\generate_mask_data.py ^
     --csv_path "%CSV_PATH%" ^
+    --image_dir "%IMAGE_DIR%" ^
     --output_dir "%OUTPUT_DIR%" ^
-    --save_options %SAVE_OPTIONS%
-
+    --save_options %SAVE_OPTIONS% ^
+    --num_workers "%NUM_WORKERS%" ^
+    --use_original
+    
 echo === Processing completed at %date% %time% ===
 
 rem Display output directory location

@@ -1,5 +1,6 @@
 import sys
 import logging
+import argparse
 import numpy as np
 import pandas as pd
 
@@ -13,7 +14,6 @@ sys.path.append(str(PROJECT_ROOT))
 
 from utils.utils import create_dense_mask_from_landmarks, encode_mask_to_rle
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,8 @@ class LandmarkProcessor:
         'heart': slice(94, None)
     }
     
-    def __init__(self, annotations_path: Path, padding_path: Path, batch_size: int = 1):
+
+    def __init__(self, annotations_path: Path, padding_path: Path, batch_size: int = 100, max_workers: int = 10):
         """
         Initialize the processor with paths to annotation and padding data.
         
@@ -35,6 +36,7 @@ class LandmarkProcessor:
             annotations_path: Path to the annotations CSV file
             padding_path: Path to the padding information CSV file
             batch_size: Number of images to process in each batch
+            max_workers: Maximum number of worker processes for parallel processing
         """
         # Read CSVs efficiently with specific dtypes
         dtype_dict = {
@@ -59,6 +61,7 @@ class LandmarkProcessor:
         self.padding_df.set_index('filename', inplace=True)
         
         self.batch_size = batch_size
+        self.max_workers = max_workers
         self._verify_data_integrity()
 
 
@@ -84,25 +87,17 @@ class LandmarkProcessor:
         
         # Process landmarks
         landmarks = np.array(eval(row["Landmarks"]))
-        print(landmarks.shape)  # shape=(240,)
-        print(row["Landmarks"])
-        quit()
         landmarks = landmarks.reshape(-1, 2) / 1024
-
-        # print(type(landmarks))
-        # print(landmarks.shape)
-        # print(landmarks[0])
 
         max_shape = max(padding_info["height"], padding_info["width"])
         landmarks = landmarks * max_shape
-        # landmarks[:, 0] *= padding_info["width"]
-        # landmarks[:, 1] *= padding_info["height"]
 
         # Adjust for padding
         landmarks[:, 0] -= padding_info["pad_left"]
         landmarks[:, 1] -= padding_info["pad_top"]
         processed_landmarks = np.round(landmarks).astype(int)
-        
+        landmarks_str = ', '.join(map(str, processed_landmarks.flatten()))
+
         # Create masks
         image_shape = (int(padding_info["height"]), int(padding_info["width"]))
         masks = {}
@@ -114,7 +109,7 @@ class LandmarkProcessor:
             "image_id": row["image_id"],
             "Dice RCA (Mean)": row["Dice RCA (Mean)"],
             "Dice RCA (Max)": row["Dice RCA (Max)"],
-            "Landmarks": processed_landmarks, #row["Landmarks"],
+            "Landmarks": landmarks_str,
             "Left Lung": masks['left_lung'],
             "Right Lung": masks['right_lung'],
             "Heart": masks['heart'],
@@ -132,7 +127,7 @@ class LandmarkProcessor:
         ]
         
         # Process items in parallel
-        with ProcessPoolExecutor(max_workers=1) as executor:
+        with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
             results = list(executor.map(self._process_single_item, items))
         
         return results
@@ -160,18 +155,34 @@ class LandmarkProcessor:
         logger.info(f"Processed data saved to {output_path}")
 
 
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description='Process landmarks and create segmentation masks for chest X-ray images.'
+    )
+    
+    parser.add_argument('--annotations-path', type=Path, required=True, help='Path to the annotations CSV file')
+    parser.add_argument('--padding-path', type=Path, required=True, help='Path to the padding information CSV file')
+    parser.add_argument('--output-path', type=Path, required=True, help='Path where the processed CSV file will be saved')
+
+    parser.add_argument('--batch-size', type=int, default=100, help='Number of images to process in each batch (default: 100)')
+    parser.add_argument('--max-workers', type=int, default=10, help='Maximum number of worker processes for parallel processing (default: 10)')
+
+    return parser.parse_args()
+
+
 def main():
-    base_path = Path(r"E:\Kai_2\DATA_Set\X-ray\CheXmask")
+    args = parse_args()
     
     processor = LandmarkProcessor(
-        annotations_path=base_path / "Preprocessed/VinDr-CXR.csv",
-        padding_path=Path(r"E:\Kai_2\DATA_Set\X-ray\VinDr-CXR\png_paddings.csv"),
-        batch_size=100  # Adjust based on your system's memory
+        annotations_path=args.annotations_path,
+        padding_path=args.padding_path,
+        batch_size=args.batch_size,
+        max_workers=args.max_workers
     )
     
-    processor.process(
-        output_path=base_path / "Annotations/OriginalResolution/VinDr-CXRv3.csv"
-    )
+    processor.process(output_path=args.output_path)
+
 
 if __name__ == "__main__":
     main()
