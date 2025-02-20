@@ -1,8 +1,8 @@
 import sys
 import cv2
+import argparse
 import numpy as np
 import pandas as pd
-import argparse
 
 from pathlib import Path
 from dataclasses import dataclass
@@ -13,6 +13,7 @@ sys.path.append(str(PROJECT_ROOT))
 
 from utils import decode_rle_to_mask
 
+
 @dataclass
 class LandmarkPoints:
     """Container for organ landmark points."""
@@ -20,12 +21,14 @@ class LandmarkPoints:
     left_lung: np.ndarray
     heart: np.ndarray
 
+
 @dataclass
 class OrganMasks:
     """Container for organ segmentation masks."""
     right_lung: np.ndarray
     left_lung: np.ndarray
     heart: np.ndarray
+
 
 class CheXmaskProcessor:
     """Process and visualize CheXmask dataset annotations."""
@@ -42,6 +45,7 @@ class CheXmaskProcessor:
         self.current_landmarks = None
         self.current_masks = None
 
+
     def _parse_landmarks(self, landmark_str: str) -> np.ndarray:
         """Parse landmark string into numpy array."""
         try:
@@ -51,35 +55,27 @@ class CheXmaskProcessor:
             landmarks = landmark_str.replace('[ ', '[').replace('\n ', ',') \
                                   .replace('  ', ',').replace(' ', ',')
             landmarks = eval(landmarks)
+
         return np.array(landmarks).reshape(-1, 2)
 
+
     def _split_landmarks(self, landmarks: np.ndarray) -> LandmarkPoints:
-        """
-        Split landmarks array into organ-specific points.
-        
-        Args:
-            landmarks: Array of all landmark points
-            
-        Returns:
-            LandmarkPoints object containing separated organ landmarks
-        """
+        """Split landmarks array into organ-specific points."""
         return LandmarkPoints(
             right_lung=landmarks[:44, :],
             left_lung=landmarks[44:94, :],
             heart=landmarks[94:, :]
         )
 
+
     def load_example(self, index: int = 0) -> None:
-        """
-        Load a specific example from the dataset.
-        
-        Args:
-            index: Index of the example to load
-        """
+        """Load a specific example from the dataset."""
         self.current_example = self.df.iloc[index]
         
         # Parse landmarks
         landmarks = self._parse_landmarks(self.current_example["Landmarks"])
+        print(type(landmarks))
+        print(len(landmarks))
         self.current_landmarks = self._split_landmarks(landmarks)
         
         # Get image dimensions
@@ -92,6 +88,7 @@ class CheXmaskProcessor:
             heart=decode_rle_to_mask(self.current_example["Heart"], height, width)
         )
 
+
     def _create_colored_mask(self) -> np.ndarray:
         """Create a colored combination of all organ masks."""
         height, width = int(self.current_example["Height"]), int(self.current_example["Width"])
@@ -101,19 +98,14 @@ class CheXmaskProcessor:
         mask[:, :, 2] = self.current_masks.heart
         return mask
 
-    def _draw_landmarks(self, img: np.ndarray, landmarks: LandmarkPoints,
-                       colors: Optional[Tuple[Tuple[int, int, int], ...]] = None) -> np.ndarray:
-        """
-        Draw landmarks on the image.
-        
-        Args:
-            img: Input image
-            landmarks: LandmarkPoints object containing organ landmarks
-            colors: Optional tuple of RGB colors for each organ's landmarks
-            
-        Returns:
-            Image with drawn landmarks
-        """
+
+    def _draw_landmarks(
+            self, 
+            img: np.ndarray, 
+            landmarks: LandmarkPoints, 
+            colors: Optional[Tuple[Tuple[int, int, int], ...]] = None
+        ) -> np.ndarray:
+        """Draw landmarks on the image."""
         if colors is None:
             colors = ((255, 0, 255),  # Right lung (magenta)
                       (255, 0, 255),  # Left lung (magenta)
@@ -124,6 +116,7 @@ class CheXmaskProcessor:
             for x, y in points.astype(int):
                 cv2.circle(result, (x, y), 10, color, -1, lineType=cv2.LINE_AA)
         return result
+
 
     def save_visualizations(self, output_dir: str = "output", save_options: List[str] = None) -> None:
         """
@@ -168,6 +161,7 @@ class CheXmaskProcessor:
             visualization = visualization_map[option]()
             cv2.imwrite(str(save_dir / f"{self.current_example['image_id']}.png"), visualization)
 
+
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description='Process CheXmask dataset annotations.')
@@ -178,8 +172,8 @@ def parse_args():
                       help='List of visualization options to save')
     return parser.parse_args()
 
+
 def main():
-    """Main function to process CheXmask dataset."""
     args = parse_args()
     
     # Initialize processor
@@ -195,26 +189,6 @@ def main():
         processor.save_visualizations(output_dir=args.output_dir, save_options=args.save_options)
         continue
 
-
-    # processor.load_example(18)
-    # processor.save_visualizations(output_dir=args.output_dir, save_options=args.save_options)
-
-    # # Process images
-    # for idx in range(total_images):
-    #     try:
-    #         print(f"Processing image {idx + 1}/{total_images}")
-    #         processor.load_example(idx)
-    #         processor.save_visualizations(output_dir=args.output_dir, save_options=args.save_options)
-    #     except Exception as e:
-    #         print(f"Error processing image at index {idx}: {str(e)}")
-    #         continue
-
-    # # Process images
-    # for idx in range(total_images):
-    #     print(f"Processing image {idx + 1}/{total_images}")
-    #     processor.load_example(idx)
-    #     processor.save_visualizations(output_dir=args.output_dir, save_options=args.save_options)
-    #     continue
 
 if __name__ == "__main__":
     main()

@@ -27,7 +27,7 @@ class LandmarkProcessor:
         'heart': slice(94, None)
     }
     
-    def __init__(self, annotations_path: Path, padding_path: Path, batch_size: int = 100):
+    def __init__(self, annotations_path: Path, padding_path: Path, batch_size: int = 1):
         """
         Initialize the processor with paths to annotation and padding data.
         
@@ -84,10 +84,20 @@ class LandmarkProcessor:
         
         # Process landmarks
         landmarks = np.array(eval(row["Landmarks"]))
+        print(landmarks.shape)  # shape=(240,)
+        print(row["Landmarks"])
+        quit()
         landmarks = landmarks.reshape(-1, 2) / 1024
+
+        # print(type(landmarks))
+        # print(landmarks.shape)
+        # print(landmarks[0])
+
         max_shape = max(padding_info["height"], padding_info["width"])
         landmarks = landmarks * max_shape
-        
+        # landmarks[:, 0] *= padding_info["width"]
+        # landmarks[:, 1] *= padding_info["height"]
+
         # Adjust for padding
         landmarks[:, 0] -= padding_info["pad_left"]
         landmarks[:, 1] -= padding_info["pad_top"]
@@ -104,7 +114,7 @@ class LandmarkProcessor:
             "image_id": row["image_id"],
             "Dice RCA (Mean)": row["Dice RCA (Mean)"],
             "Dice RCA (Max)": row["Dice RCA (Max)"],
-            "Landmarks": row["Landmarks"],
+            "Landmarks": processed_landmarks, #row["Landmarks"],
             "Left Lung": masks['left_lung'],
             "Right Lung": masks['right_lung'],
             "Heart": masks['heart'],
@@ -122,7 +132,7 @@ class LandmarkProcessor:
         ]
         
         # Process items in parallel
-        with ProcessPoolExecutor(max_workers=30) as executor:
+        with ProcessPoolExecutor(max_workers=1) as executor:
             results = list(executor.map(self._process_single_item, items))
         
         return results
@@ -160,7 +170,7 @@ def main():
     )
     
     processor.process(
-        output_path=base_path / "Annotations/OriginalResolution/VinDr-CXRv2.csv"
+        output_path=base_path / "Annotations/OriginalResolution/VinDr-CXRv3.csv"
     )
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@ setlocal
 
 rem Configuration
 set "CSV_PATH=.\data\chexmask_annotations.csv"
-set "OUTPUT_DIR=.\output"
+set "OUTPUT_DIR=.\VinDr-CXR\mask"
 set SAVE_OPTIONS="left_lung" "right_lung" "heart" "combination"
 
 rem Print header

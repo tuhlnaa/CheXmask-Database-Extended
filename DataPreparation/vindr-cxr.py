@@ -127,7 +127,7 @@ class DicomProcessor:
             if self.preserve_resolution:
                 # Keep original image without padding or resizing
                 output_img = data
-                padding = None
+                padding = PaddingMetadata(pad_left=0, pad_top=0, pad_right=0, pad_bottom=0)
             else:
                 # Pad and resize as before
                 output_img, padding = self.pad_to_square(data)
