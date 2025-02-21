@@ -33,16 +33,16 @@ class OrganMasks:
 class CheXmaskProcessor:
     """Process and visualize CheXmask dataset annotations."""
     
-    def __init__(self, csv_path: str, image_dir: Optional[str] = None):
+    def __init__(self, csv_path: str, image_dirs: Optional[List[str]] = None):
         """
         Initialize the CheXmask processor.
         
         Args:
             csv_path: Path to the CheXmask CSV annotations file
-            image_dir: Optional path to directory containing original images
+            image_dirs: Optional list of paths to directories containing original images
         """
         self.df = pd.read_csv(csv_path)
-        self.image_dir = Path(image_dir) if image_dir else None
+        self.image_dirs = [Path(d) for d in image_dirs] if image_dirs else None
         self.current_example = None
         self.current_landmarks = None
         self.current_masks = None
@@ -72,16 +72,19 @@ class CheXmaskProcessor:
 
 
     def _load_original_image(self) -> Optional[np.ndarray]:
-        """Load the original image if available."""
-        if not self.image_dir:
+        """Load the original image from any of the available image directories."""
+        if not self.image_dirs:
             return None
             
-        image_path = self.image_dir / f"{self.current_example['image_id']}.png"
-        if not image_path.exists():
-            print(f"Warning: Original image not found at {image_path}")
-            return None
+        # Try each directory until the image is found
+        for image_dir in self.image_dirs:
+            image_path = image_dir / f"{self.current_example['image_id']}.png"
             
-        return cv2.imread(str(image_path))
+            if image_path.exists():
+                return cv2.imread(str(image_path))
+                
+        print(f"Warning: Original image {self.current_example['image_id']}.png not found in any of the provided directories")
+        return None
 
 
     def load_example(self, index: int = 0) -> None:
@@ -192,9 +195,9 @@ class CheXmaskProcessor:
         
         # Define mapping of options to their corresponding mask/visualization functions
         visualization_map = {
-            'left_lung': lambda: (self.current_masks.left_lung * 255).astype(np.uint8),
-            'right_lung': lambda: (self.current_masks.right_lung * 255).astype(np.uint8),
-            'heart': lambda: (self.current_masks.heart * 255).astype(np.uint8),
+            'left_lung': lambda: (self.current_masks.left_lung).astype(np.uint8),
+            'right_lung': lambda: (self.current_masks.right_lung).astype(np.uint8),
+            'heart': lambda: (self.current_masks.heart).astype(np.uint8),
             'landmarks': lambda: self._draw_landmarks(base_img, self.current_landmarks),
             'combination': lambda: self._draw_landmarks(
                 self._create_colored_mask(use_original),
@@ -220,7 +223,7 @@ def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description='Process CheXmask dataset annotations.')
     parser.add_argument('--csv_path', type=str, help='Path to the CheXmask CSV annotations file')
-    parser.add_argument('--image_dir', type=str, help='Path to directory containing original images')
+    parser.add_argument('--image_dir', type=str, nargs='+', help='List of paths to directories containing original images')
     parser.add_argument('--output_dir', type=str, default='output', help='Directory to save output visualizations')
     parser.add_argument('--save_options', nargs='+', 
                       default=['left_lung', 'right_lung', 'heart', 'landmarks', 'combination'],
